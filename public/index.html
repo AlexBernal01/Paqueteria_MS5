@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urban Market - Rastreo de Pedidos</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <img src="/UMA.png" alt="Urban Market" class="logo-image">
+                <span class="logo-text">URBAN MARKET</span>
+            </div>
+            <div class="nav-links">
+                <a href="#">Inicio</a>
+                <a href="#">Productos</a>
+                <a href="#">Mi Cuenta</a>
+                <a href="#">Contacto</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="hero">
+        <div class="hero-content">
+            <h1>Rastrea tu pedido</h1>
+            <p>Ingresa tu número de guía y sigue el camino de tu compra</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="tracking-card">
+            <div class="search-box">
+                <input type="text" id="trackingInput" placeholder="Número de guía (ej: TRACK-539750)">
+                <button onclick="searchShipment()">Rastrear</button>
+            </div>
+        </div>
+
+        <div id="shipmentResult"></div>
+    </div>
+
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-section">
+                <h4>Urban Market</h4>
+                <p>Tu tienda de confianza</p>
+                <p>✨ Calidad y estilo ✨</p>
+            </div>
+            <div class="footer-section">
+                <h4>Atención al cliente</h4>
+                <p>📞 800-URBAN-MK</p>
+                <p>✉️ soporte@urbanmarket.com</p>
+            </div>
+            <div class="footer-section">
+                <h4>Horario</h4>
+                <p>Lun a Vie: 9am - 7pm</p>
+                <p>Sábado: 10am - 2pm</p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>Urban Market 2026 - Todos los derechos reservados</p>
+        </div>
+    </footer>
+
+    <script src="/app.js"></script>
+</body>
+</html>
