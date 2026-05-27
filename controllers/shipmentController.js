@@ -1,8 +1,9 @@
 const ShipmentModel = require('../models/shipmentModel');
 
-const INVENTARIO_URL = process.env.INVENTARIO_URL || 'https://inventario-ms.onrender.com/api/stock/restore'; //Aqui va tu URL de inventario (del render para la conexion)
+const INVENTARIO_URL = process.env.INVENTARIO_URL || 'https://inventario-ms.onrender.com/api/stock/restore';
+const INVENTARIO_SUBTRACT_URL = process.env.INVENTARIO_SUBTRACT_URL || 'https://inventario-ms.onrender.com/api/stock/subtract';
 
-async function notificarInventario(orderId, trackingNumber, action, products) { // action puede ser 'CANCELACION' o 'DEVOLUCION' del inventario (El JSON que se envia es igual para ambos casos, solo cambia el valor del campo action)
+async function notificarInventarioSumar(orderId, trackingNumber, action, products) {
     if (!products || products.length === 0) {
         console.log('No hay productos para notificar');
         return;
@@ -28,12 +29,46 @@ async function notificarInventario(orderId, trackingNumber, action, products) { 
         });
 
         if (!response.ok) {
-            console.error('Error notificando a inventario:', response.status);
+            console.error('Error notificando a inventario (sumar):', response.status);
         } else {
-            console.log('Inventario notificado correctamente');
+            console.log('Inventario notificado correctamente (sumar)');
         }
     } catch (error) {
-        console.error('Fallo conexión con inventario:', error.message);
+        console.error('Fallo conexión con inventario (sumar):', error.message);
+    }
+}
+
+async function notificarInventarioRestar(orderId, products) {
+    if (!products || products.length === 0) {
+        console.log('No hay productos para restar');
+        return;
+    }
+
+    try {
+        const response = await fetch(INVENTARIO_SUBTRACT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                orderId: orderId,
+                action: 'CREACION_ENVIO',
+                products: products.map(p => ({
+                    productId: p.productId,
+                    productName: p.productName,
+                    quantity: p.quantity,
+                    sku: p.sku,
+                    unitPrice: p.unitPrice
+                })),
+                timestamp: new Date().toISOString()
+            })
+        });
+
+        if (!response.ok) {
+            console.error('Error restando stock:', response.status);
+        } else {
+            console.log('Stock restado correctamente');
+        }
+    } catch (error) {
+        console.error('Fallo conexión con inventario (restar):', error.message);
     }
 }
 
@@ -89,6 +124,9 @@ const ShipmentController = {
                     }));
                 }
             }
+
+            // RESTAR STOCK EN INVENTARIO
+            await notificarInventarioRestar(orderId, products);
 
             const trackingNumber = `TRACK-${Math.floor(100000 + Math.random() * 900000)}`;
 
@@ -269,7 +307,8 @@ const ShipmentController = {
 
             const result = await ShipmentModel.cancelShipment(trackingNumber, ubicacion);
 
-            await notificarInventario(result.order_id, trackingNumber, 'CANCELACION', result.products);
+            // SUMAR STOCK EN INVENTARIO
+            await notificarInventarioSumar(result.order_id, trackingNumber, 'CANCELACION', result.products);
 
             res.statusCode = 200;
             res.end(JSON.stringify({
@@ -329,7 +368,8 @@ const ShipmentController = {
 
             const result = await ShipmentModel.returnShipment(trackingNumber, ubicacion);
 
-            await notificarInventario(result.order_id, trackingNumber, 'DEVOLUCION', result.products);
+            // SUMAR STOCK EN INVENTARIO (DEVOLUCION)
+            await notificarInventarioSumar(result.order_id, trackingNumber, 'DEVOLUCION', result.products);
 
             res.statusCode = 200;
             res.end(JSON.stringify({
