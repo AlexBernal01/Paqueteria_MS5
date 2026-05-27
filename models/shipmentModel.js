@@ -2,9 +2,6 @@ const supabase = require('../config/supabase');
 
 const ShipmentModel = {
 
-    // =========================================
-    // CREATE: Crear envío nuevo
-    // =========================================
     async create(shipmentData) {
         const {
             orderId,
@@ -14,7 +11,8 @@ const ShipmentModel = {
             recipientName,
             address,
             zipCode,
-            city
+            city,
+            products
         } = shipmentData;
 
         const { data: shipment, error: shipmentError } = await supabase
@@ -47,10 +45,27 @@ const ShipmentModel = {
             .insert([{
                 shipment_id: shipment.id,
                 status: 'PREPARACION',
-                current_location: 'Almacén Central Puebla'
+                current_location: 'Almacen Central Puebla'
             }]);
 
         if (trackingError) throw trackingError;
+
+        if (products && products.length > 0) {
+            const productsToInsert = products.map(p => ({
+                shipment_id: shipment.id,
+                product_id: p.productId,
+                product_name: p.productName,
+                quantity: p.quantity,
+                sku: p.sku || null,
+                unit_price: p.unitPrice || null
+            }));
+
+            const { error: productsError } = await supabase
+                .from('shipment_products')
+                .insert(productsToInsert);
+
+            if (productsError) throw productsError;
+        }
 
         return {
             trackingNumber,
@@ -58,9 +73,6 @@ const ShipmentModel = {
         };
     },
 
-    // =========================================
-    // GET ALL: Obtener todos los envíos
-    // =========================================
     async getAll() {
         const { data, error } = await supabase
             .from('shipments')
@@ -81,6 +93,13 @@ const ShipmentModel = {
                     status,
                     current_location,
                     updated_at
+                ),
+                shipment_products (
+                    product_id,
+                    product_name,
+                    quantity,
+                    sku,
+                    unit_price
                 )
             `)
             .order('id', { ascending: true });
@@ -100,9 +119,6 @@ const ShipmentModel = {
         return data || [];
     },
 
-    // =========================================
-    // FIND BY TRACKING NUMBER
-    // =========================================
     async findByTrackingNumber(trackingNumber) {
         const { data, error } = await supabase
             .from('shipments')
@@ -123,6 +139,13 @@ const ShipmentModel = {
                     status,
                     current_location,
                     updated_at
+                ),
+                shipment_products (
+                    product_id,
+                    product_name,
+                    quantity,
+                    sku,
+                    unit_price
                 )
             `)
             .eq('tracking_number', trackingNumber)
@@ -139,9 +162,6 @@ const ShipmentModel = {
         return data;
     },
 
-    // =========================================
-    // UPDATE STATUS
-    // =========================================
     async updateStatus(trackingNumber, status, currentLocation) {
         const { data: shipment, error: shipmentError } = await supabase
             .from('shipments')
@@ -172,17 +192,21 @@ const ShipmentModel = {
         };
     },
 
-    // =========================================
-    // CANCEL SHIPMENT
-    // =========================================
     async cancelShipment(trackingNumber, ubicacion) {
         const { data: shipment, error: shipmentError } = await supabase
             .from('shipments')
-            .select('id')
+            .select('id, order_id')
             .eq('tracking_number', trackingNumber)
             .single();
 
         if (shipmentError || !shipment) return null;
+
+        const { data: products, error: productsError } = await supabase
+            .from('shipment_products')
+            .select('product_id, product_name, quantity, sku, unit_price')
+            .eq('shipment_id', shipment.id);
+
+        if (productsError) throw productsError;
 
         const { data, error } = await supabase
             .from('tracking_events')
@@ -201,21 +225,27 @@ const ShipmentModel = {
             trackingNumber: trackingNumber,
             status: 'CANCELADO',
             current_location: ubicacion,
-            updated_at: data.updated_at
+            updated_at: data.updated_at,
+            order_id: shipment.order_id,
+            products: products || []
         };
     },
 
-    // =========================================
-    // RETURN SHIPMENT
-    // =========================================
     async returnShipment(trackingNumber, ubicacion) {
         const { data: shipment, error: shipmentError } = await supabase
             .from('shipments')
-            .select('id')
+            .select('id, order_id')
             .eq('tracking_number', trackingNumber)
             .single();
 
         if (shipmentError || !shipment) return null;
+
+        const { data: products, error: productsError } = await supabase
+            .from('shipment_products')
+            .select('product_id, product_name, quantity, sku, unit_price')
+            .eq('shipment_id', shipment.id);
+
+        if (productsError) throw productsError;
 
         const { data, error } = await supabase
             .from('tracking_events')
@@ -234,7 +264,9 @@ const ShipmentModel = {
             trackingNumber: trackingNumber,
             status: 'DEVUELTO',
             current_location: ubicacion,
-            updated_at: data.updated_at
+            updated_at: data.updated_at,
+            order_id: shipment.order_id,
+            products: products || []
         };
     }
 };

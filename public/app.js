@@ -24,6 +24,7 @@ async function searchShipment() {
 
         const address = data.shipping_addresses?.[0] || {};
         const tracking = data.tracking_events?.[0] || {};
+        const products = data.shipment_products || [];
         
         let currentStatus = tracking.status || "PREPARACION";
         
@@ -102,6 +103,60 @@ async function searchShipment() {
         }
         progressHTML += '</div>';
 
+        let productosHTML = '';
+        if (products && products.length > 0) {
+            productosHTML = `
+                <div style="background: #f9f9f9; padding: 22px; border-radius: 16px; margin-top: 20px;">
+                    <h3 style="font-size: 17px; color: #c42828; margin-bottom: 15px;">Productos del Pedido</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid #e0e0e0;">
+                                <th style="text-align: left; padding: 10px;">Producto</th>
+                                <th style="text-align: center; padding: 10px;">Cantidad</th>
+                                <th style="text-align: right; padding: 10px;">Precio</th>
+                                <th style="text-align: right; padding: 10px;">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            let total = 0;
+            for (const product of products) {
+                const subtotal = (product.unit_price || 0) * product.quantity;
+                total += subtotal;
+                productosHTML += `
+                    <tr style="border-bottom: 1px solid #e0e0e0;">
+                        <td style="padding: 10px;">
+                            <strong>${product.product_name}</strong><br>
+                            <small style="color: #666;">ID: ${product.product_id} | SKU: ${product.sku || 'N/A'}</small>
+                        </td>
+                        <td style="text-align: center; padding: 10px;">${product.quantity}</td>
+                        <td style="text-align: right; padding: 10px;">$${(product.unit_price || 0).toFixed(2)}</td>
+                        <td style="text-align: right; padding: 10px;">$${subtotal.toFixed(2)}</td>
+                    </tr>
+                `;
+            }
+            
+            productosHTML += `
+                        </tbody>
+                        <tfoot>
+                            <tr style="border-top: 2px solid #e0e0e0;">
+                                <td colspan="3" style="text-align: right; padding: 10px;"><strong>TOTAL:</strong></td>
+                                <td style="text-align: right; padding: 10px;"><strong>$${total.toFixed(2)}</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            `;
+        } else {
+            productosHTML = `
+                <div style="background: #f9f9f9; padding: 22px; border-radius: 16px; margin-top: 20px;">
+                    <h3 style="font-size: 17px; color: #c42828; margin-bottom: 15px;">Productos del Pedido</h3>
+                    <p style="color: #666; text-align: center;">No hay productos registrados para este envio</p>
+                </div>
+            `;
+        }
+
         let specialMessage = '';
         if (currentStatus === 'CANCELADO') {
             specialMessage = `
@@ -156,7 +211,9 @@ async function searchShipment() {
                     </div>
                 </div>
 
-                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                ${productosHTML}
+
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 20px;">
                     ${buttonsHTML}
                 </div>
             </div>

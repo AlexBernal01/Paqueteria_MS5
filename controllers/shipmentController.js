@@ -1,10 +1,44 @@
 const ShipmentModel = require('../models/shipmentModel');
 
+const INVENTARIO_URL = process.env.INVENTARIO_URL || 'https://inventario-ms.onrender.com/api/stock/restore'; //Aqui va tu URL de inventario (del render para la conexion)
+
+async function notificarInventario(orderId, trackingNumber, action, products) { // action puede ser 'CANCELACION' o 'DEVOLUCION' del inventario (El JSON que se envia es igual para ambos casos, solo cambia el valor del campo action)
+    if (!products || products.length === 0) {
+        console.log('No hay productos para notificar');
+        return;
+    }
+
+    try {
+        const response = await fetch(INVENTARIO_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                orderId: orderId,
+                trackingNumber: trackingNumber,
+                action: action,
+                products: products.map(p => ({
+                    productId: p.product_id,
+                    productName: p.product_name,
+                    quantity: p.quantity,
+                    sku: p.sku,
+                    unitPrice: p.unit_price
+                })),
+                timestamp: new Date().toISOString()
+            })
+        });
+
+        if (!response.ok) {
+            console.error('Error notificando a inventario:', response.status);
+        } else {
+            console.log('Inventario notificado correctamente');
+        }
+    } catch (error) {
+        console.error('Fallo conexión con inventario:', error.message);
+    }
+}
+
 const ShipmentController = {
 
-    // =========================================
-    // POST: Crear nuevo envío
-    // =========================================
     async createShipment(req, res, bodyText) {
         try {
             const body = JSON.parse(bodyText);
@@ -15,14 +49,21 @@ const ShipmentController = {
                 address,
                 zipCode,
                 city,
-                weight
+                weight,
+                products
             } = body;
 
-            // Validaciones
             if (!orderId || !recipientName || !address || !zipCode || !city || !weight) {
                 res.statusCode = 400;
                 return res.end(JSON.stringify({
                     error: "Campos obligatorios incompletos"
+                }));
+            }
+
+            if (!products || !Array.isArray(products) || products.length === 0) {
+                res.statusCode = 400;
+                return res.end(JSON.stringify({
+                    error: "Se requiere la lista de productos del envio"
                 }));
             }
 
@@ -36,21 +77,27 @@ const ShipmentController = {
             if (!/^[0-9]{5}$/.test(zipCode)) {
                 res.statusCode = 400;
                 return res.end(JSON.stringify({
-                    error: "El código postal debe tener exactamente 5 dígitos"
+                    error: "El codigo postal debe tener exactamente 5 digitos"
                 }));
             }
 
-            // Generar tracking
+            for (const product of products) {
+                if (!product.productId || !product.productName || !product.quantity || product.quantity <= 0) {
+                    res.statusCode = 400;
+                    return res.end(JSON.stringify({
+                        error: "Cada producto debe tener productId, productName y quantity mayor a 0"
+                    }));
+                }
+            }
+
             const trackingNumber = `TRACK-${Math.floor(100000 + Math.random() * 900000)}`;
 
-            // Paquetería según peso
             const courier = weight > 10
                 ? 'FedEx Heavy'
                 : weight > 5
                     ? 'Estafeta Premium'
                     : 'DHL Express';
 
-            // Guardar en modelo
             const result = await ShipmentModel.create({
                 orderId,
                 trackingNumber,
@@ -59,27 +106,25 @@ const ShipmentController = {
                 recipientName,
                 address,
                 zipCode,
-                city
+                city,
+                products
             });
 
             res.statusCode = 201;
             res.end(JSON.stringify({
-                mensaje: "Envío programado con éxito",
+                mensaje: "Envio programado con exito",
                 data: result
             }));
 
         } catch (error) {
             res.statusCode = 400;
             res.end(JSON.stringify({
-                error: "JSON inválido o error de base de datos",
+                error: "JSON invalido o error de base de datos",
                 detalles: error.message
             }));
         }
     },
 
-    // =========================================
-    // GET: Obtener tracking por número de guía
-    // =========================================
     async getTracking(res, trackingNumber) {
         try {
             const shipment = await ShipmentModel.findByTrackingNumber(trackingNumber);
@@ -87,7 +132,7 @@ const ShipmentController = {
             if (!shipment) {
                 res.statusCode = 404;
                 return res.end(JSON.stringify({
-                    error: "Número de guía no localizado"
+                    error: "Numero de guia no localizado"
                 }));
             }
 
@@ -97,15 +142,12 @@ const ShipmentController = {
         } catch (error) {
             res.statusCode = 500;
             res.end(JSON.stringify({
-                error: "Fallo en la comunicación con la base de datos",
+                error: "Fallo en la comunicacion con la base de datos",
                 detalles: error.message
             }));
         }
     },
 
-    // =========================================
-    // GET: Obtener todos los envíos
-    // =========================================
     async getAllShipments(res) {
         try {
             const shipments = await ShipmentModel.getAll();
@@ -116,62 +158,53 @@ const ShipmentController = {
         } catch (error) {
             res.statusCode = 500;
             res.end(JSON.stringify({
-                error: "Error obteniendo todos los envíos",
+                error: "Error obteniendo todos los envios",
                 detalles: error.message
             }));
         }
     },
 
-    // =========================================
-    // PUT: Actualizar estado del envío
-    // =========================================
     async updateShipmentStatus(res, trackingNumber, bodyText) {
         try {
             const body = JSON.parse(bodyText);
             let { status, current_location } = body;
 
-            // Primero obtener el estado actual del envío
             const shipmentActual = await ShipmentModel.findByTrackingNumber(trackingNumber);
             
             if (!shipmentActual) {
                 res.statusCode = 404;
-                return res.end(JSON.stringify({ error: "Número de guía no localizado" }));
+                return res.end(JSON.stringify({ error: "Numero de guia no localizado" }));
             }
 
             const estadoActual = shipmentActual.tracking_events?.[0]?.status;
             
-            // =========================================
-            // BLOQUEAR ESTADOS TERMINALES
-            // Si ya está CANCELADO o DEVUELTO, no se puede modificar
-            // =========================================
             if (estadoActual === 'CANCELADO') {
                 res.statusCode = 400;
                 return res.end(JSON.stringify({
-                    error: "❌ Este envío ya fue CANCELADO. No se puede modificar su estado."
+                    error: "Este envio ya fue CANCELADO. No se puede modificar su estado."
                 }));
             }
             
             if (estadoActual === 'DEVUELTO') {
                 res.statusCode = 400;
                 return res.end(JSON.stringify({
-                    error: "❌ Este envío ya fue DEVUELTO. No se puede modificar su estado."
+                    error: "Este envio ya fue DEVUELTO. No se puede modificar su estado."
                 }));
             }
 
-            // Estados permitidos
             const validStatuses = ["PREPARACION", "RECOLECCION", "TRANSITO", "ENTREGADO"];
             
             if (!status || !validStatuses.includes(status)) {
                 res.statusCode = 400;
                 return res.end(JSON.stringify({
-                    error: "Estado inválido. Usa PREPARACION, RECOLECCION, TRANSITO o ENTREGADO"
+                    error: "Estado invalido. Usa PREPARACION, RECOLECCION, TRANSITO o ENTREGADO"
                 }));
             }
 
             if (!current_location || current_location.trim() === "") {
                 res.statusCode = 400;
                 return res.end(JSON.stringify({
-                    error: "La ubicación actual es obligatoria"
+                    error: "La ubicacion actual es obligatoria"
                 }));
             }
 
@@ -179,7 +212,7 @@ const ShipmentController = {
 
             if (!result) {
                 res.statusCode = 404;
-                return res.end(JSON.stringify({ error: "Número de guía no encontrado" }));
+                return res.end(JSON.stringify({ error: "Numero de guia no encontrado" }));
             }
 
             res.statusCode = 200;
@@ -197,34 +230,30 @@ const ShipmentController = {
         }
     },
 
-    // =========================================
-    // DELETE: Cancelar envío
-    // =========================================
     async cancelShipment(res, trackingNumber) {
         try {
             const shipment = await ShipmentModel.findByTrackingNumber(trackingNumber);
 
             if (!shipment) {
                 res.statusCode = 404;
-                return res.end(JSON.stringify({ error: "Número de guía no localizado" }));
+                return res.end(JSON.stringify({ error: "Numero de guia no localizado" }));
             }
 
             const currentStatus = shipment.tracking_events?.[0]?.status;
 
-            // Bloquear si ya está cancelado o devuelto
             if (currentStatus === 'CANCELADO') {
                 res.statusCode = 400;
-                return res.end(JSON.stringify({ error: "❌ Este envío ya está CANCELADO" }));
+                return res.end(JSON.stringify({ error: "Este envio ya esta CANCELADO" }));
             }
             
             if (currentStatus === 'DEVUELTO') {
                 res.statusCode = 400;
-                return res.end(JSON.stringify({ error: "❌ Este envío ya está DEVUELTO" }));
+                return res.end(JSON.stringify({ error: "Este envio ya esta DEVUELTO" }));
             }
 
             if (currentStatus === 'ENTREGADO') {
                 res.statusCode = 400;
-                return res.end(JSON.stringify({ error: "❌ No se puede cancelar un envío entregado. Usa devolución." }));
+                return res.end(JSON.stringify({ error: "No se puede cancelar un envio entregado. Usa devolucion." }));
             }
 
             let ubicacion = "";
@@ -232,13 +261,15 @@ const ShipmentController = {
 
             if (currentStatus === 'PREPARACION') {
                 ubicacion = "Cancelado por el cliente - Sin proceso";
-                mensaje = "✅ Envío cancelado exitosamente. El proceso ha sido detenido.";
+                mensaje = "Envio cancelado exitosamente. El proceso ha sido detenido.";
             } else {
-                ubicacion = "Devolución en proceso hacia el centro de envíos";
-                mensaje = "✅ Cancelación exitosa. Se ha iniciado la devolución al centro de envíos.";
+                ubicacion = "Devolucion en proceso hacia el centro de envios";
+                mensaje = "Cancelacion exitosa. Se ha iniciado la devolucion al centro de envios.";
             }
 
             const result = await ShipmentModel.cancelShipment(trackingNumber, ubicacion);
+
+            await notificarInventario(result.order_id, trackingNumber, 'CANCELACION', result.products);
 
             res.statusCode = 200;
             res.end(JSON.stringify({
@@ -247,46 +278,41 @@ const ShipmentController = {
             }));
 
         } catch (error) {
-            console.error("Error cancelando envío:", error);
+            console.error("Error cancelando envio:", error);
             res.statusCode = 500;
             res.end(JSON.stringify({
-                error: "Error al cancelar el envío",
+                error: "Error al cancelar el envio",
                 detalles: error.message
             }));
         }
     },
 
-    // =========================================
-    // POST: Devolución de envío
-    // =========================================
     async returnShipment(res, trackingNumber) {
         try {
             const shipment = await ShipmentModel.findByTrackingNumber(trackingNumber);
 
             if (!shipment) {
                 res.statusCode = 404;
-                return res.end(JSON.stringify({ error: "Número de guía no localizado" }));
+                return res.end(JSON.stringify({ error: "Numero de guia no localizado" }));
             }
 
             const currentStatus = shipment.tracking_events?.[0]?.status;
 
-            // Bloquear si ya está cancelado o devuelto
             if (currentStatus === 'CANCELADO') {
                 res.statusCode = 400;
-                return res.end(JSON.stringify({ error: "❌ Este envío ya está CANCELADO" }));
+                return res.end(JSON.stringify({ error: "Este envio ya esta CANCELADO" }));
             }
             
             if (currentStatus === 'DEVUELTO') {
                 res.statusCode = 400;
-                return res.end(JSON.stringify({ error: "❌ Este envío ya está DEVUELTO" }));
+                return res.end(JSON.stringify({ error: "Este envio ya esta DEVUELTO" }));
             }
 
-            // Validar que se pueda devolver (a partir de RECOLECCION)
             if (currentStatus === 'PREPARACION') {
                 res.statusCode = 400;
                 return res.end(JSON.stringify({ 
-                    error: "❌ Envío en preparación. Mejor cancela el pedido directamente.",
-                    sugerencia: "Usa la opción de cancelar envío"
+                    error: "Envio en preparacion. Mejor cancela el pedido directamente.",
+                    sugerencia: "Usa la opcion de cancelar envio"
                 }));
             }
 
@@ -294,14 +320,16 @@ const ShipmentController = {
             let mensaje = "";
 
             if (currentStatus === 'ENTREGADO') {
-                ubicacion = "Devolución solicitada - Esperando recolección en domicilio";
-                mensaje = "✅ Devolución de producto solicitada. Se coordinará la recolección en domicilio.";
+                ubicacion = "Devolucion solicitada - Esperando recoleccion en domicilio";
+                mensaje = "Devolucion de producto solicitada. Se coordinara la recoleccion en domicilio.";
             } else {
-                ubicacion = "Devolución en proceso - Paquete retornando al almacén";
-                mensaje = "✅ Devolución solicitada. El paquete será regresado al centro de envíos.";
+                ubicacion = "Devolucion en proceso - Paquete retornando al almacen";
+                mensaje = "Devolucion solicitada. El paquete sera regresado al centro de envios.";
             }
 
             const result = await ShipmentModel.returnShipment(trackingNumber, ubicacion);
+
+            await notificarInventario(result.order_id, trackingNumber, 'DEVOLUCION', result.products);
 
             res.statusCode = 200;
             res.end(JSON.stringify({
@@ -310,10 +338,10 @@ const ShipmentController = {
             }));
 
         } catch (error) {
-            console.error("Error en devolución:", error);
+            console.error("Error en devolucion:", error);
             res.statusCode = 500;
             res.end(JSON.stringify({
-                error: "Error al procesar la devolución",
+                error: "Error al procesar la devolucion",
                 detalles: error.message
             }));
         }

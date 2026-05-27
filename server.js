@@ -1,87 +1,109 @@
 const http = require('http');
 const fs = require('fs');
-const path = require('path');
 const shipmentRoutes = require('./routes/shipmentRoutes');
+const { swaggerSpec } = require('./swagger');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
+function serveStaticFile(req, res, filePath, contentType) {
+    fs.readFile(filePath, (err, content) => {
+        if (err) {
+            res.writeHead(404);
+            res.end();
+            return;
+        }
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(content);
+    });
+}
+
+function serveSwaggerUI(req, res) {
+    if (req.url === '/api-docs') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>API Logistica - Documentacion</title>
+                <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+            </head>
+            <body>
+                <div id="swagger-ui"></div>
+                <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+                <script>
+                    window.onload = () => {
+                        SwaggerUIBundle({
+                            url: "/api-docs.json",
+                            dom_id: '#swagger-ui',
+                        });
+                    };
+                </script>
+            </body>
+            </html>
+        `);
+        return true;
+    }
+    
+    if (req.url === '/api-docs.json') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(swaggerSpec));
+        return true;
+    }
+    
+    return false;
+}
 
 const server = http.createServer((req, res) => {
-    res.setHeader('X-Company-Name', 'Urban Market');
-    res.setHeader('X-Company-Email', 'soporte@urbanmarket.com');
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     
-    console.log("=== NUEVA PETICION ===");
-    console.log("Metodo:", req.method);
-    console.log("URL:", req.url);
+    if (req.url === '/health' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+            status: 'healthy', 
+            service: 'shipment-service',
+            timestamp: new Date().toISOString()
+        }));
+        return;
+    }
+    
+    if (serveSwaggerUI(req, res)) {
+        return;
+    }
+    
+    if (req.url === '/' || req.url === '/index.html') {
+        serveStaticFile(req, res, './public/index.html', 'text/html');
+        return;
+    }
+    
+    if (req.url === '/styles.css') {
+        serveStaticFile(req, res, './public/styles.css', 'text/css');
+        return;
+    }
+    
+    if (req.url === '/app.js') {
+        serveStaticFile(req, res, './public/app.js', 'application/javascript');
+        return;
+    }
+    
+    if (req.url === '/UMA.png') {
+        serveStaticFile(req, res, './public/UMA.png', 'image/png');
+        return;
+    }
     
     try {
-        if (req.url === '/' && req.method === 'GET') {
-            console.log("Sirviendo index.html");
-            const filePath = path.join(__dirname, 'public', 'index.html');
-            fs.readFile(filePath, (err, content) => {
-                if (err) {
-                    res.writeHead(500);
-                    res.end('Error');
-                    return;
-                }
-                res.writeHead(200, { 'Content-Type': 'text/html' });
-                res.end(content);
-            });
-        }
-        else if (req.url === '/styles.css' && req.method === 'GET') {
-            console.log("Sirviendo styles.css");
-            const filePath = path.join(__dirname, 'public', 'styles.css');
-            fs.readFile(filePath, (err, content) => {
-                if (err) {
-                    res.writeHead(500);
-                    res.end('Error');
-                    return;
-                }
-                res.writeHead(200, { 'Content-Type': 'text/css' });
-                res.end(content);
-            });
-        }
-        else if (req.url === '/app.js' && req.method === 'GET') {
-            console.log("Sirviendo app.js");
-            const filePath = path.join(__dirname, 'public', 'app.js');
-            fs.readFile(filePath, (err, content) => {
-                if (err) {
-                    res.writeHead(500);
-                    res.end('Error');
-                    return;
-                }
-                res.writeHead(200, { 'Content-Type': 'application/javascript' });
-                res.end(content);
-            });
-        }
-        else if (req.url === '/UMA.png' && req.method === 'GET') {
-            console.log("Sirviendo logo UMA.png");
-            const filePath = path.join(__dirname, 'public', 'UMA.png');
-            fs.readFile(filePath, (err, content) => {
-                if (err) {
-                    console.error("Logo no encontrado:", filePath);
-                    res.writeHead(404);
-                    res.end();
-                    return;
-                }
-                res.writeHead(200, { 'Content-Type': 'image/png' });
-                res.end(content);
-            });
-        }
-        else {
-            console.log("Llamando a shipmentRoutes");
-            shipmentRoutes(req, res);
-        }
+        shipmentRoutes(req, res);
     } catch (error) {
-        console.error("Error en server:", error);
+        console.error('Error:', error);
         res.statusCode = 500;
-        res.end(JSON.stringify({ error: error.message }));
+        res.end(JSON.stringify({ error: 'Internal server error' }));
     }
 });
 
 server.listen(PORT, () => {
-    console.log(`Servidor corriendo en http://localhost:${PORT}`);
+    console.log(`Servicio corriendo en http://localhost:${PORT}`);
+    console.log(`Documentacion Swagger en http://localhost:${PORT}/api-docs`);
 });
 
 server.on('error', (error) => {
-    console.error("Error del servidor:", error);
+    console.error('Error del servidor:', error);
 });
