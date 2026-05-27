@@ -1,3 +1,123 @@
+ /** 
+ @openapi
+ * /shipments:
+ *   get:
+ *     summary: Obtener todos los envios
+ *     tags: [Shipments]
+ *     responses:
+ *       200:
+ *         description: Lista de todos los envios
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/TrackingResponse'
+ *       500:
+ *         description: Error del servidor
+ * 
+ *   post:
+ *     summary: Crear un nuevo envio
+ *     tags: [Shipments]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CreateShipment'
+ *     responses:
+ *       201:
+ *         description: Envio creado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ShipmentResponse'
+ *       400:
+ *         description: Datos invalidos
+ *
+ * /shipments/{trackingNumber}:
+ *   get:
+ *     summary: Obtener tracking de un envio
+ *     tags: [Tracking]
+ *     parameters:
+ *       - name: trackingNumber
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Informacion del envio
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TrackingResponse'
+ *       404:
+ *         description: Envio no encontrado
+ *
+ * /shipments/{trackingNumber}/status:
+ *   put:
+ *     summary: Actualizar estado de un envio
+ *     tags: [Status]
+ *     parameters:
+ *       - name: trackingNumber
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UpdateStatus'
+ *     responses:
+ *       200:
+ *         description: Estado actualizado
+ *       400:
+ *         description: Estado invalido o envio cancelado
+ *       404:
+ *         description: Envio no encontrado
+ *
+ * /shipments/{trackingNumber}/cancel:
+ *   delete:
+ *     summary: Cancelar un envio
+ *     tags: [Shipments]
+ *     parameters:
+ *       - name: trackingNumber
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Envio cancelado
+ *       400:
+ *         description: No se puede cancelar
+ *       404:
+ *         description: Envio no encontrado
+ *
+ * /shipments/{trackingNumber}/return:
+ *   post:
+ *     summary: Solicitar devolucion de un envio
+ *     tags: [Shipments]
+ *     parameters:
+ *       - name: trackingNumber
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Devolucion solicitada
+ *       400:
+ *         description: No se puede devolver
+ *       404:
+ *         description: Envio no encontrado
+ */
+
+
+
 const ShipmentController = require('../controllers/shipmentController');
 
 const shipmentRoutes = (req, res) => {
